@@ -41,7 +41,7 @@
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight * 0.8;
 
-        // Paletas secundárias + branco (8-bit style)
+        // Paletas somente secundárias + branca (8-bit style)
         const paletas = [
             ['#FFFFFF', '#F0F0F0', '#E0E0E0', '#D0D0D0'], // Branco
             ['#00FF00', '#00E000', '#00C000', '#00A000'], // Verde
@@ -62,33 +62,27 @@
 
         let roloAtual = null;
         let camadas = [];
-        let lastX = 0, lastY = 0, lastTime = 0, velocityX = 0, velocityY = 0, animId = null;
+        let pullStartX = 0, pullStartY = 0, pullEndX = 0, pullEndY = 0, isPulling = false, animId = null;
         let fundoAtual = Math.floor(Math.random() * fundos.length);
-        let pontos = 0, combo = 0, challengeInterval = null;
+        let pontos = 0, combo = 0, bounces = 0, challengeInterval = null, windX = 0, windY = 0;
         const scoreEl = document.getElementById('score');
         const challengeMode = document.getElementById('challenge-mode');
+        const friction = 0.98, bounceFactor = 0.8;
 
         function atualizarScore() {
             scoreEl.textContent = `Pontos: ${pontos} | Combo: ${combo}`;
         }
 
-        function clipToBounds(x, y) {
-            return {
-                x: Math.max(0, Math.min(canvas.width, x)),
-                y: Math.max(0, Math.min(canvas.height, y))
-            };
-        }
-
         function desenharRolo() {
-            fundos[fundoAtual](); // Fundo PB
-            camadas.forEach(camada => ctx.drawImage(camada, 0, 0)); // Sobreposições
+            fundos[fundoAtual](); // Fundo PB aleatório
+            camadas.forEach(camada => ctx.drawImage(camada, 0, 0));
 
             if (roloAtual) {
                 ctx.save();
                 ctx.translate(roloAtual.x, roloAtual.y);
                 ctx.rotate(roloAtual.angulo);
 
-                // Rolo icônico (visível inteiro)
+                // Rolo icônico
                 ctx.fillStyle = '#654321'; ctx.fillRect(-8, -8, 16, 16);
                 ctx.fillStyle = '#8B4513';
                 ctx.beginPath(); ctx.arc(0, 0, roloAtual.raio, 0, Math.PI * 2); ctx.fill();
@@ -98,7 +92,7 @@
                     ctx.fillStyle = roloAtual.cor[roloAtual.cor.length - 1]; ctx.fillRect(-roloAtual.raio + 2, -2, 4, roloAtual.raio * 2);
                 }
 
-                // Papel desenrolado: path clipado e visível
+                // Papel desenrolado
                 if (roloAtual.path.length > 0) {
                     ctx.globalAlpha = 0.9;
                     ctx.strokeStyle = roloAtual.cor[0];
@@ -107,7 +101,6 @@
                     ctx.moveTo(roloAtual.path[0].x - roloAtual.x, roloAtual.path[0].y - roloAtual.y);
                     roloAtual.path.forEach(p => ctx.lineTo(p.x - roloAtual.x, p.y - roloAtual.y));
                     ctx.stroke();
-                    // Textura serrilhada
                     for (let i = 0; i < roloAtual.path.length; i += 4) {
                         ctx.fillStyle = roloAtual.cor[1]; ctx.fillRect(roloAtual.path[i].x - roloAtual.x - 2, roloAtual.path[i].y - roloAtual.y - 1, 4, roloAtual.espessura + 2);
                     }
@@ -115,46 +108,64 @@
                 }
                 ctx.restore();
             }
+
+            if (isPulling) {
+                // Linha de mira pixelada
+                ctx.strokeStyle = '#FFF'; ctx.lineWidth = 4;
+                ctx.beginPath(); ctx.moveTo(pullStartX, pullStartY); ctx.lineTo(pullEndX, pullEndY); ctx.stroke();
+                ctx.strokeStyle = '#000'; ctx.lineWidth = 2;
+                ctx.beginPath(); ctx.moveTo(pullStartX, pullStartY); ctx.lineTo(pullEndX, pullEndY); ctx.stroke();
+            }
         }
 
         function iniciarRolo(x, y) {
-            const clipped = clipToBounds(x, y);
-            roloAtual = { x: clipped.x, y: clipped.y, raio: 30, cor: paletas[Math.floor(Math.random() * paletas.length)], angulo: 0, path: [], espessura: 8 };
+            roloAtual = { x, y, velX: 0, velY: 0, raio: 30, cor: paletas[Math.floor(Math.random() * paletas.length)], angulo: 0, path: [], espessura: 8 };
             desenharRolo();
         }
 
-        function desenrolar(dx, dy, velocidade) {
+        function arremessar() {
             if (!roloAtual) return;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            roloAtual.angulo = Math.atan2(dy, dx);
-            roloAtual.espessura = Math.max(4, Math.min(12, velocidade * 4)); // Espessura por velocidade
-            const newX = lastX + dx;
-            const newY = lastY + dy;
-            const clipped = clipToBounds(newX, newY);
-            roloAtual.path.push(clipped);
-            pontos += Math.floor(dist / 10);
+            const dx = pullStartX - pullEndX; // Direção oposta ao puxar
+            const dy = pullStartY - pullEndY;
+            const força = Math.sqrt(dx * dx + dy * dy) / 10; // Força do arremesso
+            roloAtual.velX = dx / 10 * força / 50;
+            roloAtual.velY = dy / 10 * força / 50;
+            roloAtual.espessura = Math.max(4, Math.min(12, força / 5)); // Espessura por força
+            isPulling = false;
+            animarArremesso();
+            if ('vibrate' in navigator) navigator.vibrate(Math.floor(força * 5));
             combo++;
-            if (combo % 5 === 0) pontos += 50;
+            pontos += Math.floor(força * 10); // Pontos por força
+            if (combo % 3 === 0) pontos += 100; // Bonus combo
             atualizarScore();
-            desenharRolo();
-            if ('vibrate' in navigator) navigator.vibrate(Math.floor(velocidade * 20)); // Vibração por velocidade
-            return clipped;
         }
 
-        function aplicarMomentum(velX, velY) {
+        function animarArremesso() {
             if (animId) cancelAnimationFrame(animId);
-            let momentum = Math.sqrt(velX * velX + velY * velY) * 50; // Força baseada na velocidade final
             function frame() {
-                if (momentum <= 0) {
+                if (!roloAtual) return;
+                roloAtual.velX *= friction;
+                roloAtual.velY *= friction;
+                roloAtual.velX += windX; // Vento no desafio
+                roloAtual.velY += windY;
+                roloAtual.x += roloAtual.velX;
+                roloAtual.y += roloAtual.velY;
+                roloAtual.angulo += roloAtual.velX / 100; // Rotação durante voo
+
+                // Bounce nas bordas
+                if (roloAtual.x < 0 || roloAtual.x > canvas.width) { roloAtual.velX *= -bounceFactor; roloAtual.x = Math.max(0, Math.min(canvas.width, roloAtual.x)); bounces++; pontos += 20; }
+                if (roloAtual.y < 0 || roloAtual.y > canvas.height) { roloAtual.velY *= -bounceFactor; roloAtual.y = Math.max(0, Math.min(canvas.height, roloAtual.y)); bounces++; pontos += 20; }
+                atualizarScore();
+
+                // Desenrola durante voo
+                if (Math.abs(roloAtual.velX) > 0.1 || Math.abs(roloAtual.velY) > 0.1) {
+                    roloAtual.path.push({ x: roloAtual.x, y: roloAtual.y });
+                } else {
                     finalizarRolo();
                     return;
                 }
-                const dx = velX * momentum / 50;
-                const dy = velY * momentum / 50;
-                const clipped = desenrolar(dx, dy, momentum / 50);
-                lastX = clipped.x;
-                lastY = clipped.y;
-                momentum -= 1; // Decaimento gradual
+
+                desenharRolo();
                 animId = requestAnimationFrame(frame);
             }
             frame();
@@ -167,20 +178,21 @@
                 camada.getContext('2d').drawImage(canvas, 0, 0);
                 camadas.push(camada);
                 roloAtual = null;
-                combo = 0;
-                atualizarScore();
+                bounces = 0;
             }
         }
 
         function alternarFundo() {
             fundoAtual = Math.floor(Math.random() * fundos.length);
+            windX = (Math.random() - 0.5) * 0.05; // Vento aleatório
+            windY = (Math.random() - 0.5) * 0.05;
             desenharRolo();
         }
 
         function limparTudo() {
             camadas = [];
             roloAtual = null;
-            pontos = 0; combo = 0;
+            pontos = 0; combo = 0; bounces = 0;
             atualizarScore();
             desenharRolo();
         }
@@ -192,44 +204,40 @@
             link.click();
         }
 
-        // Modo Desafio: Muda fundo auto
+        // Modo Desafio: Altera fundo e vento
         challengeMode.addEventListener('change', () => {
             if (challengeMode.checked) {
-                challengeInterval = setInterval(alternarFundo, 10000);
+                challengeInterval = setInterval(alternarFundo, 8000);
             } else {
                 clearInterval(challengeInterval);
+                windX = 0; windY = 0;
             }
         });
 
-        // Eventos touch mobile com controle real-time e momentum
+        // Eventos touch para arremesso preciso
         canvas.addEventListener('touchstart', e => {
             e.preventDefault();
-            lastX = e.touches[0].clientX - canvas.offsetLeft;
-            lastY = e.touches[0].clientY - canvas.offsetTop;
-            lastTime = Date.now();
-            velocityX = 0; velocityY = 0;
-            iniciarRolo(lastX, lastY);
+            pullStartX = e.touches[0].clientX - canvas.offsetLeft;
+            pullStartY = e.touches[0].clientY - canvas.offsetTop;
+            isPulling = true;
+            if (!roloAtual) iniciarRolo(pullStartX, pullStartY);
+            pullEndX = pullStartX; pullEndY = pullStartY;
+            desenharRolo();
         });
 
         canvas.addEventListener('touchmove', e => {
             e.preventDefault();
-            const currentX = e.touches[0].clientX - canvas.offsetLeft;
-            const currentY = e.touches[0].clientY - canvas.offsetTop;
-            const dx = currentX - lastX;
-            const dy = currentY - lastY;
-            const currentTime = Date.now();
-            const dt = currentTime - lastTime;
-            const velocidade = Math.sqrt(dx * dx + dy * dy) / (dt || 1);
-            const clipped = desenrolar(dx, dy, velocidade);
-            velocityX = dx / dt;
-            velocityY = dy / dt;
-            lastX = clipped.x;
-            lastY = clipped.y;
-            lastTime = currentTime;
+            if (isPulling) {
+                pullEndX = e.touches[0].clientX - canvas.offsetLeft;
+                pullEndY = e.touches[0].clientY - canvas.offsetTop;
+                desenharRolo();
+            }
         });
 
         canvas.addEventListener('touchend', e => {
-            aplicarMomentum(velocityX, velocityY);
+            if (isPulling) {
+                arremessar();
+            }
         });
 
         // Inicializa
