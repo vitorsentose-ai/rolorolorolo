@@ -16,6 +16,7 @@
         button:hover { background: #fff; color: #000; box-shadow: 1px 1px 0 #000; transform: translate(1px, 1px); }
         button:active { box-shadow: none; transform: translate(2px, 2px); }
         #crt-toggle:checked ~ canvas { filter: url(#crt-scanlines); }
+        #score { position: absolute; top: 10px; left: 10px; color: #fff; background: #000; padding: 5px; }
     </style>
 </head>
 <body>
@@ -28,11 +29,11 @@
     </svg>
     <div class="controls">
         <label><input type="checkbox" id="crt-toggle"> CRT On</label>
-        <button onclick="novoRolo()">Novo Rolo</button>
-        <button onclick="alternarFundo()">Fundo Aleatório</button>
+        <label><input type="checkbox" id="challenge-mode"> Modo Desafio</label>
         <button onclick="limparTudo()">Limpar Tudo</button>
         <button onclick="salvarObra()">Salvar JPG</button>
     </div>
+    <div id="score">Pontos: 0 | Combo: 0</div>
     <canvas id="canvas"></canvas>
     <script>
         const canvas = document.getElementById('canvas');
@@ -59,83 +60,85 @@
             () => { for (let i = 0; i < canvas.height; i += 20) { ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(canvas.width, i + 10); ctx.lineTo(0, i + 20); ctx.fillStyle = '#000'; ctx.fill(); } }
         ];
 
-        let roloAtual = { x: 0, y: 0, raio: 30, cor: paletas[0], comprimento: 0, angulo: 0, animando: false };
+        let roloAtual = null;
         let camadas = [];
-        let touchStartX = 0, touchStartY = 0, touchStartTime = 0, animId = null;
+        let lastX = 0, lastY = 0, touchStartTime = 0, animId = null;
         let fundoAtual = Math.floor(Math.random() * fundos.length);
+        let pontos = 0, combo = 0, challengeInterval = null;
+        const scoreEl = document.getElementById('score');
+        const challengeMode = document.getElementById('challenge-mode');
+
+        function atualizarScore() {
+            scoreEl.textContent = `Pontos: ${pontos} | Combo: ${combo}`;
+        }
 
         function desenharRolo() {
             fundos[fundoAtual](); // Fundo PB
-            camadas.forEach(camada => ctx.drawImage(camada, 0, 0)); // Sobreposições com alpha
+            camadas.forEach(camada => ctx.drawImage(camada, 0, 0)); // Sobreposições
 
-            ctx.save();
-            ctx.translate(roloAtual.x, roloAtual.y);
-            ctx.rotate(-roloAtual.angulo); // Rotaciona rolo oposto à direção
+            if (roloAtual) {
+                ctx.save();
+                ctx.translate(roloAtual.x, roloAtual.y);
+                ctx.rotate(roloAtual.angulo);
 
-            // Rolo icônico pixelado
-            ctx.fillStyle = '#654321'; ctx.fillRect(-8, -8, 16, 16); // Sombra
-            ctx.fillStyle = '#8B4513'; // Miolo
-            ctx.beginPath(); ctx.arc(0, 0, roloAtual.raio, 0, Math.PI * 2); ctx.fill();
-            for (let i = 0; i < 3; i++) {
-                ctx.fillStyle = roloAtual.cor[i % roloAtual.cor.length];
-                ctx.beginPath(); ctx.arc(0, 0, roloAtual.raio - i * 8, 0, Math.PI * 2); ctx.fill();
-                ctx.fillStyle = roloAtual.cor[roloAtual.cor.length - 1]; ctx.fillRect(-roloAtual.raio + 2, -2, 4, roloAtual.raio * 2);
-            }
-
-            // Papel desenrolado: faixa rotacionada com textura
-            if (roloAtual.comprimento > 0) {
-                const alpha = Math.min(1, roloAtual.comprimento / 100);
-                ctx.globalAlpha = alpha * 0.9; // Transparência para sobreposições orgânicas
-                ctx.fillStyle = roloAtual.cor[0];
-                ctx.fillRect(roloAtual.raio, 0, roloAtual.comprimento, 8); // Faixa larga
-                // Textura serrilhada
-                for (let l = roloAtual.raio; l < roloAtual.raio + roloAtual.comprimento; l += 4) {
-                    ctx.fillStyle = roloAtual.cor[1]; ctx.fillRect(l + 2, -1, 2, 10);
-                    if (l % 8 === 0) { ctx.fillStyle = '#000'; ctx.fillRect(l - 2, -2, 4, 12); } // Serras
+                // Rolo icônico
+                ctx.fillStyle = '#654321'; ctx.fillRect(-8, -8, 16, 16);
+                ctx.fillStyle = '#8B4513';
+                ctx.beginPath(); ctx.arc(0, 0, roloAtual.raio, 0, Math.PI * 2); ctx.fill();
+                for (let i = 0; i < 3; i++) {
+                    ctx.fillStyle = roloAtual.cor[i % roloAtual.cor.length];
+                    ctx.beginPath(); ctx.arc(0, 0, roloAtual.raio - i * 8, 0, Math.PI * 2); ctx.fill();
+                    ctx.fillStyle = roloAtual.cor[roloAtual.cor.length - 1]; ctx.fillRect(-roloAtual.raio + 2, -2, 4, roloAtual.raio * 2);
                 }
-                ctx.globalAlpha = 1;
+
+                // Papel desenrolado: faixa dinâmica
+                if (roloAtual.path.length > 0) {
+                    ctx.globalAlpha = 0.9;
+                    ctx.strokeStyle = roloAtual.cor[0];
+                    ctx.lineWidth = roloAtual.espessura;
+                    ctx.beginPath();
+                    ctx.moveTo(roloAtual.path[0].x - roloAtual.x, roloAtual.path[0].y - roloAtual.y);
+                    roloAtual.path.forEach(p => ctx.lineTo(p.x - roloAtual.x, p.y - roloAtual.y));
+                    ctx.stroke();
+                    // Textura serrilhada ao longo da linha
+                    for (let i = 0; i < roloAtual.path.length; i += 4) {
+                        ctx.fillStyle = roloAtual.cor[1]; ctx.fillRect(roloAtual.path[i].x - roloAtual.x - 2, roloAtual.path[i].y - roloAtual.y - 1, 4, roloAtual.espessura + 2);
+                    }
+                    ctx.globalAlpha = 1;
+                }
+                ctx.restore();
             }
-            ctx.restore();
         }
 
-        function animarDesenrolo(dx, dy, velocidade) {
-            if (animId) cancelAnimationFrame(animId);
-            const distancia = Math.sqrt(dx * dx + dy * dy);
-            const percentual = Math.min(0.8, velocidade / 300); // Até 80% da tela
-            roloAtual.angulo = Math.atan2(dy, dx);
-            roloAtual.comprimento = 0;
-            let frames = 0, maxFrames = 30;
-            function frame() {
-                roloAtual.comprimento += percentual * distancia / maxFrames;
-                // Move rolo levemente na direção oposta para "puxar"
-                roloAtual.x -= Math.cos(roloAtual.angulo) * percentual * 2;
-                roloAtual.y -= Math.sin(roloAtual.angulo) * percentual * 2;
-                desenharRolo();
-                frames++;
-                if (frames < maxFrames) {
-                    animId = requestAnimationFrame(frame);
-                } else {
-                    // Adiciona camada
-                    const camada = document.createElement('canvas');
-                    camada.width = canvas.width; camada.height = canvas.height;
-                    camada.getContext('2d').drawImage(canvas, 0, 0);
-                    camadas.push(camada);
-                    animId = null;
-                }
-            }
-            frame();
-        }
-
-        function novoRolo() {
-            // Ponto de início variado: aleatório nas bordas
-            const lado = Math.floor(Math.random() * 4);
-            switch (lado) {
-                case 0: roloAtual = { x: Math.random() * canvas.width, y: -roloAtual.raio, raio: 30, cor: paletas[Math.floor(Math.random() * paletas.length)], comprimento: 0, angulo: 0 }; break; // Topo
-                case 1: roloAtual = { x: canvas.width + roloAtual.raio, y: Math.random() * canvas.height, raio: 30, cor: paletas[Math.floor(Math.random() * paletas.length)], comprimento: 0, angulo: 0 }; break; // Direita
-                case 2: roloAtual = { x: Math.random() * canvas.width, y: canvas.height + roloAtual.raio, raio: 30, cor: paletas[Math.floor(Math.random() * paletas.length)], comprimento: 0, angulo: 0 }; break; // Baixo
-                case 3: roloAtual = { x: -roloAtual.raio, y: Math.random() * canvas.height, raio: 30, cor: paletas[Math.floor(Math.random() * paletas.length)], comprimento: 0, angulo: 0 }; break; // Esquerda
-            }
+        function iniciarRolo(x, y) {
+            roloAtual = { x, y, raio: 30, cor: paletas[Math.floor(Math.random() * paletas.length)], angulo: 0, path: [], espessura: 8 };
             desenharRolo();
+        }
+
+        function desenrolar(dx, dy, velocidade) {
+            if (!roloAtual) return;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            roloAtual.angulo = Math.atan2(dy, dx);
+            roloAtual.espessura = Math.max(4, Math.min(12, 8 / velocidade)); // Controle por velocidade
+            roloAtual.path.push({ x: lastX + dx, y: lastY + dy });
+            pontos += Math.floor(dist / 10); // Pontos por distância
+            combo++;
+            if (combo % 5 === 0) pontos += 50; // Bonus combo
+            atualizarScore();
+            desenharRolo();
+            if ('vibrate' in navigator) navigator.vibrate(10); // Vibração sutil
+        }
+
+        function finalizarRolo() {
+            if (roloAtual && roloAtual.path.length > 0) {
+                const camada = document.createElement('canvas');
+                camada.width = canvas.width; camada.height = canvas.height;
+                camada.getContext('2d').drawImage(canvas, 0, 0);
+                camadas.push(camada);
+                roloAtual = null;
+                combo = 0;
+                atualizarScore();
+            }
         }
 
         function alternarFundo() {
@@ -145,7 +148,10 @@
 
         function limparTudo() {
             camadas = [];
-            novoRolo();
+            roloAtual = null;
+            pontos = 0; combo = 0;
+            atualizarScore();
+            desenharRolo();
         }
 
         function salvarObra() {
@@ -155,28 +161,43 @@
             link.click();
         }
 
-        // Eventos touch para direções variadas
-        canvas.addEventListener('touchstart', e => {
-            touchStartX = e.touches[0].clientX - canvas.offsetLeft;
-            touchStartY = e.touches[0].clientY - canvas.offsetTop;
-            touchStartTime = Date.now();
-        });
-
-        canvas.addEventListener('touchend', e => {
-            const touchEndX = e.changedTouches[0].clientX - canvas.offsetLeft;
-            const touchEndY = e.changedTouches[0].clientY - canvas.offsetTop;
-            const dx = touchEndX - touchStartX;
-            const dy = touchEndY - touchStartY;
-            const tempo = Date.now() - touchStartTime;
-            const distancia = Math.sqrt(dx * dx + dy * dy);
-            if (tempo > 100 && distancia > 30) { // Swipe válido
-                const velocidade = distancia / tempo * 1000;
-                animarDesenrolo(dx, dy, velocidade);
+        // Modo Desafio: Muda fundo auto
+        challengeMode.addEventListener('change', () => {
+            if (challengeMode.checked) {
+                challengeInterval = setInterval(alternarFundo, 10000);
+            } else {
+                clearInterval(challengeInterval);
             }
         });
 
+        // Eventos touch mobile com controle real-time
+        canvas.addEventListener('touchstart', e => {
+            e.preventDefault();
+            lastX = e.touches[0].clientX - canvas.offsetLeft;
+            lastY = e.touches[0].clientY - canvas.offsetTop;
+            touchStartTime = Date.now();
+            if (!roloAtual) iniciarRolo(lastX, lastY);
+        });
+
+        canvas.addEventListener('touchmove', e => {
+            e.preventDefault();
+            const currentX = e.touches[0].clientX - canvas.offsetLeft;
+            const currentY = e.touches[0].clientY - canvas.offsetTop;
+            const dx = currentX - lastX;
+            const dy = currentY - lastY;
+            const tempo = Date.now() - touchStartTime;
+            const velocidade = Math.sqrt(dx * dx + dy * dy) / (tempo || 1);
+            desenrolar(dx, dy, velocidade);
+            lastX = currentX;
+            lastY = currentY;
+        });
+
+        canvas.addEventListener('touchend', e => {
+            finalizarRolo();
+        });
+
         // Inicializa
-        novoRolo();
+        desenharRolo();
     </script>
 </body>
 </html>
