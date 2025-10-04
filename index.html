@@ -6,16 +6,16 @@
     <title>Desenrolo 8-bit</title>
     <style>
         body { margin: 0; background: #000; color: #fff; font-family: 'Courier New', monospace; text-transform: uppercase; image-rendering: pixelated; font-size: 12px; }
-        canvas { display: block; width: 100%; height: 80vh; background: #fff; image-rendering: pixelated; }
+        canvas { display: block; width: 100%; height: 80vh; background: #fff; image-rendering: pixelated; border-radius: 8px; margin: 0 auto; }
         .controls { text-align: center; padding: 10px; background: #000; }
         button { 
             background: #000; color: #fff; border: 3px solid #fff; padding: 8px 16px; margin: 5px; 
             font-family: inherit; cursor: pointer; image-rendering: pixelated; 
-            box-shadow: 2px 2px 0 #000; /* Efeito 3D pixelado */
+            box-shadow: 2px 2px 0 #000;
         }
         button:hover { background: #fff; color: #000; box-shadow: 1px 1px 0 #000; transform: translate(1px, 1px); }
         button:active { box-shadow: none; transform: translate(2px, 2px); }
-        #crt-toggle:checked ~ canvas { filter: url(#crt-scanlines); } /* CRT via SVG filter */
+        #crt-toggle:checked ~ canvas { filter: url(#crt-scanlines); }
     </style>
 </head>
 <body>
@@ -36,7 +36,7 @@
     <canvas id="canvas"></canvas>
     <script>
         const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d', { alpha: false });
+        const ctx = canvas.getContext('2d', { alpha: true });
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight * 0.8;
 
@@ -49,78 +49,77 @@
             ['#FFFF00', '#FFFF00', '#E0E000', '#C0C000']  // Amarelo
         ];
 
-        // Padrões de fundo PB aleatórios com transição
+        // Padrões de fundo PB aleatórios
         const fundos = [
-            () => transicaoFundo('#000'), // Preto sólido
-            () => transicaoFundo('#FFF'), // Branco sólido
-            () => { transicaoFundo('#FFF'); for (let i = 0; i < canvas.height; i += 8) { ctx.fillStyle = (i % 16 === 0) ? '#000' : '#FFF'; ctx.fillRect(0, i, canvas.width, 4); } }, // Listras
-            () => { transicaoFundo('#FFF'); for (let x = 0; x < canvas.width; x += 16) for (let y = 0; y < canvas.height; y += 16) { ctx.fillStyle = (x + y) % 32 === 0 ? '#000' : '#FFF'; ctx.fillRect(x, y, 16, 16); } }, // Xadrez
-            () => { transicaoFundo('#FFF'); for (let i = 0; i < 50; i++) { ctx.fillStyle = Math.random() > 0.5 ? '#000' : '#FFF'; ctx.fillRect(Math.random() * canvas.width, Math.random() * canvas.height, 8, 8); } }, // Blocos/Pontos
-            () => { transicaoFundo('#FFF'); for (let i = 0; i < canvas.height; i += 20) { ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(canvas.width, i + 10); ctx.lineTo(0, i + 20); ctx.fillStyle = '#000'; ctx.fill(); } } // Triângulos (simplificado)
+            () => { ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height); },
+            () => { ctx.fillStyle = '#FFF'; ctx.fillRect(0, 0, canvas.width, canvas.height); },
+            () => { for (let i = 0; i < canvas.height; i += 8) { ctx.fillStyle = (i % 16 === 0) ? '#000' : '#FFF'; ctx.fillRect(0, i, canvas.width, 4); } },
+            () => { for (let x = 0; x < canvas.width; x += 16) for (let y = 0; y < canvas.height; y += 16) { ctx.fillStyle = (x + y) % 32 === 0 ? '#000' : '#FFF'; ctx.fillRect(x, y, 16, 16); } },
+            () => { for (let i = 0; i < 50; i++) { ctx.fillStyle = Math.random() > 0.5 ? '#000' : '#FFF'; ctx.fillRect(Math.random() * canvas.width, Math.random() * canvas.height, 8, 8); } },
+            () => { for (let i = 0; i < canvas.height; i += 20) { ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(canvas.width, i + 10); ctx.lineTo(0, i + 20); ctx.fillStyle = '#000'; ctx.fill(); } }
         ];
 
-        function transicaoFundo(cor) {
-            ctx.fillStyle = cor;
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-        }
-
-        let roloAtual = { x: canvas.width / 2, y: 50, raio: 30, cor: paletas[0], desenrolado: 0, animando: false };
+        let roloAtual = { x: 0, y: 0, raio: 30, cor: paletas[0], comprimento: 0, angulo: 0, animando: false };
         let camadas = [];
-        let touchStartY = 0, touchStartTime = 0, animId = null;
+        let touchStartX = 0, touchStartY = 0, touchStartTime = 0, animId = null;
         let fundoAtual = Math.floor(Math.random() * fundos.length);
 
         function desenharRolo() {
             fundos[fundoAtual](); // Fundo PB
-            camadas.forEach(camada => ctx.drawImage(camada, 0, 0)); // Sobreposições
+            camadas.forEach(camada => ctx.drawImage(camada, 0, 0)); // Sobreposições com alpha
 
-            // Rolo icônico pixelado: miolo + camadas + sombra
-            const sombraX = roloAtual.x + 5, sombraY = roloAtual.y + 5;
-            ctx.fillStyle = '#654321'; // Sombra miolo
-            ctx.fillRect(sombraX - 8, sombraY - 8, 16, 16);
-            ctx.fillStyle = '#8B4513'; // Miolo marrom radial
-            ctx.beginPath(); ctx.arc(roloAtual.x, roloAtual.y, roloAtual.raio, 0, Math.PI * 2); ctx.fill();
-            for (let i = 0; i < 3; i++) { // Camadas concêntricas com dither
+            ctx.save();
+            ctx.translate(roloAtual.x, roloAtual.y);
+            ctx.rotate(-roloAtual.angulo); // Rotaciona rolo oposto à direção
+
+            // Rolo icônico pixelado
+            ctx.fillStyle = '#654321'; ctx.fillRect(-8, -8, 16, 16); // Sombra
+            ctx.fillStyle = '#8B4513'; // Miolo
+            ctx.beginPath(); ctx.arc(0, 0, roloAtual.raio, 0, Math.PI * 2); ctx.fill();
+            for (let i = 0; i < 3; i++) {
                 ctx.fillStyle = roloAtual.cor[i % roloAtual.cor.length];
-                ctx.beginPath(); ctx.arc(roloAtual.x, roloAtual.y, roloAtual.raio - i * 8, 0, Math.PI * 2); ctx.fill();
-                // Highlights para volume
-                ctx.fillStyle = roloAtual.cor[roloAtual.cor.length - 1]; ctx.fillRect(roloAtual.x - roloAtual.raio + 2, roloAtual.y - 2, 4, roloAtual.raio * 2);
+                ctx.beginPath(); ctx.arc(0, 0, roloAtual.raio - i * 8, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = roloAtual.cor[roloAtual.cor.length - 1]; ctx.fillRect(-roloAtual.raio + 2, -2, 4, roloAtual.raio * 2);
             }
 
-            // Papel desenrolado animado (com fade-in gradual)
-            if (roloAtual.desenrolado > 0) {
-                const alpha = Math.min(1, roloAtual.desenrolado / 100); // Fade-in
-                ctx.globalAlpha = alpha;
+            // Papel desenrolado: faixa rotacionada com textura
+            if (roloAtual.comprimento > 0) {
+                const alpha = Math.min(1, roloAtual.comprimento / 100);
+                ctx.globalAlpha = alpha * 0.9; // Transparência para sobreposições orgânicas
                 ctx.fillStyle = roloAtual.cor[0];
-                ctx.fillRect(roloAtual.x - roloAtual.raio, roloAtual.y + roloAtual.raio, roloAtual.raio * 2, roloAtual.desenrolado);
-                // Textura serrilhada 8-bit
-                for (let y = roloAtual.y + roloAtual.raio; y < roloAtual.y + roloAtual.raio + roloAtual.desenrolado; y += 4) {
-                    ctx.fillStyle = roloAtual.cor[1]; ctx.fillRect(roloAtual.x - roloAtual.raio + 2, y, roloAtual.raio * 2 - 4, 2);
-                    if (y % 8 === 0) { ctx.fillStyle = '#000'; ctx.fillRect(roloAtual.x + roloAtual.raio - 2, y, 4, 2); } // Serrilhado
+                ctx.fillRect(roloAtual.raio, 0, roloAtual.comprimento, 8); // Faixa larga
+                // Textura serrilhada
+                for (let l = roloAtual.raio; l < roloAtual.raio + roloAtual.comprimento; l += 4) {
+                    ctx.fillStyle = roloAtual.cor[1]; ctx.fillRect(l + 2, -1, 2, 10);
+                    if (l % 8 === 0) { ctx.fillStyle = '#000'; ctx.fillRect(l - 2, -2, 4, 12); } // Serras
                 }
                 ctx.globalAlpha = 1;
             }
+            ctx.restore();
         }
 
-        function animarDesenrolo(velocidade) {
+        function animarDesenrolo(dx, dy, velocidade) {
             if (animId) cancelAnimationFrame(animId);
-            const percentual = Math.min(0.4, Math.abs(velocidade) / 500); // Velocidade variável
-            let frames = 0, maxFrames = 20;
+            const distancia = Math.sqrt(dx * dx + dy * dy);
+            const percentual = Math.min(0.8, velocidade / 300); // Até 80% da tela
+            roloAtual.angulo = Math.atan2(dy, dx);
+            roloAtual.comprimento = 0;
+            let frames = 0, maxFrames = 30;
             function frame() {
-                roloAtual.desenrolado += percentual * 20;
-                roloAtual.y += percentual * 2; // Rolo acompanha a ponta
+                roloAtual.comprimento += percentual * distancia / maxFrames;
+                // Move rolo levemente na direção oposta para "puxar"
+                roloAtual.x -= Math.cos(roloAtual.angulo) * percentual * 2;
+                roloAtual.y -= Math.sin(roloAtual.angulo) * percentual * 2;
                 desenharRolo();
                 frames++;
-                if (frames < maxFrames && roloAtual.desenrolado < canvas.height - roloAtual.y - roloAtual.raio * 2) {
+                if (frames < maxFrames) {
                     animId = requestAnimationFrame(frame);
                 } else {
-                    // Adiciona camada se completo
-                    if (roloAtual.desenrolado >= canvas.height - roloAtual.y - roloAtual.raio * 2) {
-                        const camada = document.createElement('canvas');
-                        camada.width = canvas.width; camada.height = canvas.height;
-                        camada.getContext('2d').drawImage(canvas, 0, 0);
-                        camadas.push(camada);
-                        novoRolo();
-                    }
+                    // Adiciona camada
+                    const camada = document.createElement('canvas');
+                    camada.width = canvas.width; camada.height = canvas.height;
+                    camada.getContext('2d').drawImage(canvas, 0, 0);
+                    camadas.push(camada);
                     animId = null;
                 }
             }
@@ -128,7 +127,14 @@
         }
 
         function novoRolo() {
-            roloAtual = { x: canvas.width / 2, y: 50, raio: 30, cor: paletas[Math.floor(Math.random() * paletas.length)], desenrolado: 0, animando: false };
+            // Ponto de início variado: aleatório nas bordas
+            const lado = Math.floor(Math.random() * 4);
+            switch (lado) {
+                case 0: roloAtual = { x: Math.random() * canvas.width, y: -roloAtual.raio, raio: 30, cor: paletas[Math.floor(Math.random() * paletas.length)], comprimento: 0, angulo: 0 }; break; // Topo
+                case 1: roloAtual = { x: canvas.width + roloAtual.raio, y: Math.random() * canvas.height, raio: 30, cor: paletas[Math.floor(Math.random() * paletas.length)], comprimento: 0, angulo: 0 }; break; // Direita
+                case 2: roloAtual = { x: Math.random() * canvas.width, y: canvas.height + roloAtual.raio, raio: 30, cor: paletas[Math.floor(Math.random() * paletas.length)], comprimento: 0, angulo: 0 }; break; // Baixo
+                case 3: roloAtual = { x: -roloAtual.raio, y: Math.random() * canvas.height, raio: 30, cor: paletas[Math.floor(Math.random() * paletas.length)], comprimento: 0, angulo: 0 }; break; // Esquerda
+            }
             desenharRolo();
         }
 
@@ -144,23 +150,28 @@
 
         function salvarObra() {
             const link = document.createElement('a');
-            link.download = 'obra-desenrolo-8bit.jpg';
+            link.download = 'obra-desenrolo-arte.jpg';
             link.href = canvas.toDataURL('image/jpeg', 0.9);
             link.click();
         }
 
-        // Eventos touch para mobile (ignora toques curtos)
+        // Eventos touch para direções variadas
         canvas.addEventListener('touchstart', e => {
-            touchStartY = e.touches[0].clientY;
+            touchStartX = e.touches[0].clientX - canvas.offsetLeft;
+            touchStartY = e.touches[0].clientY - canvas.offsetTop;
             touchStartTime = Date.now();
         });
 
         canvas.addEventListener('touchend', e => {
-            const distancia = e.changedTouches[0].clientY - touchStartY;
+            const touchEndX = e.changedTouches[0].clientX - canvas.offsetLeft;
+            const touchEndY = e.changedTouches[0].clientY - canvas.offsetTop;
+            const dx = touchEndX - touchStartX;
+            const dy = touchEndY - touchStartY;
             const tempo = Date.now() - touchStartTime;
-            if (tempo > 100 && Math.abs(distancia) > 20) { // Swipe válido
-                const velocidade = distancia / tempo; // Velocidade real
-                if (velocidade > 0) animarDesenrolo(velocidade);
+            const distancia = Math.sqrt(dx * dx + dy * dy);
+            if (tempo > 100 && distancia > 30) { // Swipe válido
+                const velocidade = distancia / tempo * 1000;
+                animarDesenrolo(dx, dy, velocidade);
             }
         });
 
