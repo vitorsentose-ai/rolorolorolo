@@ -35,7 +35,6 @@
     <div class="controls" style="display:none;">
         <label><input type="checkbox" id="crt-toggle"> CRT On</label>
         <label><input type="checkbox" id="nes-challenge"> Modo NES</label>
-        <button onclick="demoAuto()">Demo Auto</button>
         <button onclick="limparTudo()">Reset</button>
         <button onclick="salvarObra()">Salvar JPG</button>
     </div>
@@ -72,7 +71,6 @@
         let fundoAtual = 0;
         let pontos = 0, combo = 0, bounces = 0, level = 1, nesMode = false, powerUpActive = null;
         let challengeInterval = null, windX = 0, windY = 0, gravity = 0;
-        let demoRunning = false, demoTimer = null;
         const scoreEl = document.getElementById('score');
         const controlsEl = document.querySelector('.controls');
         const titleEl = document.getElementById('title-screen');
@@ -89,7 +87,7 @@
         }
 
         function desenharRolo() {
-            fundos[fundoAtual](); // Fundo pastel PB
+            fundos[fundoAtual](); // Fundo pastel
             camadas.forEach(camada => ctx.drawImage(camada, 0, 0));
 
             if (roloAtual) {
@@ -101,8 +99,8 @@
                 ctx.rotate(roloAtual.angulo);
 
                 // Rolo pastel icônico
-                ctx.fillStyle = '#D2B48C'; ctx.fillRect(-8, -8, 16, 16);
-                ctx.fillStyle = '#DEB887';
+                ctx.fillStyle = '#D2B48C'; ctx.fillRect(-8, -8, 16, 16); // Sombra suave
+                ctx.fillStyle = '#DEB887'; // Miolo
                 ctx.beginPath(); ctx.arc(0, 0, raio, 0, Math.PI * 2); ctx.fill();
                 for (let i = 0; i < 3; i++) {
                     ctx.fillStyle = roloAtual.cor[i % roloAtual.cor.length];
@@ -110,7 +108,7 @@
                     ctx.fillStyle = roloAtual.cor[roloAtual.cor.length - 1]; ctx.fillRect(-raio + 2, -2, 4, raio * 2);
                 }
 
-                // Path desenrolado (foreground composição)
+                // Path desenrolado
                 if (roloAtual.path.length > 0) {
                     ctx.globalAlpha = alpha * 0.9;
                     ctx.strokeStyle = roloAtual.cor[0];
@@ -128,6 +126,7 @@
             }
 
             if (isPulling) {
+                // Mira tracejada pastel
                 ctx.setLineDash([5, 5]); ctx.strokeStyle = '#D3D3D3'; ctx.lineWidth = 3;
                 ctx.beginPath(); ctx.moveTo(pullStartX, pullStartY); ctx.lineTo(pullEndX, pullEndY); ctx.stroke();
                 ctx.setLineDash([]);
@@ -138,7 +137,8 @@
             roloAtual = { x, y, velX: 0, velY: 0, raio: 30, cor: paletas[Math.floor(Math.random() * paletas.length)], angulo: 0, path: [], espessura: 6 };
             spawnPowerUp();
             desenharRolo();
-            playBeep(440, 0.1);
+            // SFX chiptune simples
+            playBeep(440, 0.1); // Beep de start
         }
 
         function playBeep(freq, duration) {
@@ -148,7 +148,7 @@
             oscillator.connect(gainNode);
             gainNode.connect(audioCtx.destination);
             oscillator.frequency.value = freq;
-            oscillator.type = 'square';
+            oscillator.type = 'square'; // NES-like
             gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
             gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
             oscillator.start(audioCtx.currentTime);
@@ -165,7 +165,7 @@
             roloAtual.espessura = Math.max(4, Math.min(10, força / 5));
             isPulling = false;
             animarArremesso();
-            playBeep(523, 0.05);
+            playBeep(523, 0.05); // Whoosh
             combo++;
             pontos += Math.floor(força * 10);
             if (combo % 3 === 0) pontos += 100;
@@ -178,13 +178,14 @@
             function frame() {
                 if (!roloAtual) return;
                 roloAtual.velX *= friction;
-                roloAtual.velY *= friction + gravity * 0.01;
+                roloAtual.velY *= friction + gravity * 0.01; // Gravidade NES
                 roloAtual.velX += windX;
                 roloAtual.velY += windY;
                 roloAtual.x += roloAtual.velX;
                 roloAtual.y += roloAtual.velY;
                 roloAtual.angulo += roloAtual.velX / 100;
 
+                // Bounce
                 if (roloAtual.x < 0 || roloAtual.x > canvas.width) { roloAtual.velX *= -bounceFactor; roloAtual.x = Math.max(0, Math.min(canvas.width, roloAtual.x)); bounces++; pontos += 20; playBeep(659, 0.03); }
                 if (roloAtual.y < 0 || roloAtual.y > canvas.height) { roloAtual.velY *= -bounceFactor; roloAtual.y = Math.max(0, Math.min(canvas.height, roloAtual.y)); bounces++; pontos += 20; playBeep(659, 0.03); }
 
@@ -210,6 +211,7 @@
                 roloAtual = null;
                 powerUpActive = null;
                 bounces = 0;
+                if (nesMode) setTimeout(() => nesMode = false, 5000); // Power-up dura 5s
             }
         }
 
@@ -236,7 +238,7 @@
             link.click();
         }
 
-        // Modo NES
+        // Modo NES: Níveis e power-ups
         nesChallenge.addEventListener('change', () => {
             nesMode = nesChallenge.checked;
             if (nesMode) {
@@ -248,41 +250,13 @@
             }
         });
 
-        // Demo Auto: Simula arremessos
-        function demoAuto() {
-            if (demoRunning) return;
-            demoRunning = true;
-            limparTudo();
-            let demoCount = 0, maxDemos = Math.floor(Math.random() * 3) + 3;
-            function nextDemo() {
-                if (demoCount >= maxDemos || !demoRunning) {
-                    demoRunning = false;
-                    return;
-                }
-                alternarFundo(); // Muda padrão PB aleatório
-                const randX = Math.random() * canvas.width;
-                const randY = Math.random() * canvas.height;
-                const randDirX = (Math.random() - 0.5) * 100; // Direção randômica
-                const randDirY = (Math.random() - 0.5) * 100;
-                const força = Math.random() * 50 + 20; // Força variada
-                iniciarRolo(randX, randY);
-                pullStartX = randX; pullStartY = randY;
-                pullEndX = randX + randDirX; pullEndY = randY + randDirY;
-                arremessar();
-                demoCount++;
-                demoTimer = setTimeout(nextDemo, 2000 + Math.random() * 1000); // Pausa randômica
-            }
-            nextDemo();
-        }
-
-        // Eventos touch - Fix para início
+        // Eventos touch
         canvas.addEventListener('touchstart', e => {
             e.preventDefault();
             if (titleEl.style.display !== 'none') {
                 titleEl.style.display = 'none';
                 controlsEl.style.display = 'block';
                 scoreEl.style.display = 'block';
-                setTimeout(() => demoAuto(), 3000); // Auto-demo após 3s
                 return;
             }
             pullStartX = e.touches[0].clientX - canvas.offsetLeft;
