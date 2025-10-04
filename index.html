@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Desenrolo 8-bit</title>
+    <style>
+        body { margin: 0; background: #000; color: #fff; font-family: 'Courier New', monospace; text-transform: uppercase; image-rendering: pixelated; }
+        canvas { display: block; width: 100%; height: 80vh; background: #fff; image-rendering: pixelated; }
+        .controls { text-align: center; padding: 10px; }
+        button { background: #000; color: #fff; border: 2px solid #fff; padding: 10px 20px; margin: 5px; font-family: inherit; cursor: pointer; }
+        button:hover { background: #fff; color: #000; }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <div class="controls">
+        <button onclick="novoRolo()">Novo Rolo</button>
+        <button onclick="alternarFundo()">Alternar Fundo</button>
+        <button onclick="salvarObra()">Finalizar Obra (JPG)</button>
+    </div>
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d', { alpha: false });
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight * 0.8;
+
+        // Paletas secundárias + branco (8-bit style)
+        const paletas = [
+            ['#FFFFFF', '#E0E0E0', '#C0C0C0', '#A0A0A0'], // Branco
+            ['#00FF00', '#00CC00', '#009900', '#006600'], // Verde
+            ['#FFA500', '#CC8400', '#996300', '#664200'], // Laranja
+            ['#800080', '#660066', '#4C004C', '#330033'], // Roxo
+            ['#FFFF00', '#CCCC00', '#999900', '#666600']  // Amarelo
+        ];
+
+        // Padrões de fundo preto/branco aleatórios
+        const fundos = [
+            () => { ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height); }, // Preto sólido
+            () => { ctx.fillStyle = '#FFF'; ctx.fillRect(0, 0, canvas.width, canvas.height); }, // Branco sólido
+            () => { for (let i = 0; i < canvas.height; i += 4) { ctx.fillStyle = (i % 8 === 0) ? '#000' : '#FFF'; ctx.fillRect(0, i, canvas.width, 4); } }, // Listras
+            () => { for (let x = 0; x < canvas.width; x += 8) for (let y = 0; y < canvas.height; y += 8) { ctx.fillStyle = Math.random() > 0.5 ? '#000' : '#FFF'; ctx.fillRect(x, y, 8, 8); } }, // Xadrez
+            () => { for (let i = 0; i < 100; i++) { ctx.fillStyle = Math.random() > 0.5 ? '#000' : '#FFF'; ctx.beginPath(); ctx.arc(Math.random() * canvas.width, Math.random() * canvas.height, 4, 0, Math.PI * 2); ctx.fill(); } } // Pontos
+        ];
+
+        let roloAtual = { x: canvas.width / 2, y: 50, raio: 40, cor: paletas[0], desenrolado: 0 };
+        let camadas = []; // Para sobreposições
+        let touchStartY = 0, touchStartTime = 0;
+        let fundoAtual = Math.floor(Math.random() * fundos.length);
+
+        function desenharRolo() {
+            fundos[fundoAtual](); // Aplica fundo
+            camadas.forEach(camada => ctx.drawImage(camada, 0, 0)); // Sobreposições
+
+            // Desenhar rolo pixelado
+            ctx.fillStyle = '#8B4513'; // Miolo marrom 8-bit
+            ctx.fillRect(roloAtual.x - 10, roloAtual.y - 10, 20, 20); // Miolo
+            for (let i = 0; i < 4; i++) { // Camadas de papel com dithering
+                ctx.fillStyle = roloAtual.cor[i];
+                ctx.beginPath();
+                ctx.arc(roloAtual.x, roloAtual.y, roloAtual.raio - i * 5, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Papel desenrolado (retângulo com textura serrilhada)
+            if (roloAtual.desenrolado > 0) {
+                ctx.fillStyle = roloAtual.cor[0];
+                ctx.fillRect(roloAtual.x - roloAtual.raio, roloAtual.y + roloAtual.raio, roloAtual.raio * 2, roloAtual.desenrolado);
+                // Textura 8-bit: linhas verticais e serrilhado
+                for (let y = roloAtual.y + roloAtual.raio; y < roloAtual.y + roloAtual.raio + roloAtual.desenrolado; y += 4) {
+                    ctx.fillStyle = roloAtual.cor[1];
+                    ctx.fillRect(roloAtual.x - roloAtual.raio + 2, y, roloAtual.raio * 2 - 4, 2);
+                }
+            }
+        }
+
+        function animarDesenrolo(distancia) {
+            const percentual = Math.min(1, Math.abs(distancia) / 200); // Velocidade variável
+            roloAtual.desenrolado += percentual * 300; // Ajusta distância
+            if (roloAtual.desenrolado >= canvas.height - roloAtual.y - roloAtual.raio) {
+                const camada = document.createElement('canvas');
+                camada.width = canvas.width; camada.height = canvas.height;
+                camada.getContext('2d').drawImage(canvas, 0, 0);
+                camadas.push(camada); // Adiciona camada de sobreposição
+                novoRolo();
+            }
+            desenharRolo();
+        }
+
+        function novoRolo() {
+            roloAtual = { x: canvas.width / 2, y: 50, raio: 40, cor: paletas[Math.floor(Math.random() * paletas.length)], desenrolado: 0 };
+            desenharRolo();
+        }
+
+        function alternarFundo() {
+            fundoAtual = (fundoAtual + 1) % fundos.length;
+            desenharRolo();
+        }
+
+        function salvarObra() {
+            const link = document.createElement('a');
+            link.download = 'obra-desenrolo.jpg';
+            link.href = canvas.toDataURL('image/jpeg');
+            link.click();
+        }
+
+        // Eventos touch para mobile
+        canvas.addEventListener('touchstart', e => {
+            touchStartY = e.touches[0].clientY;
+            touchStartTime = Date.now();
+        });
+
+        canvas.addEventListener('touchmove', e => {
+            const distancia = e.touches[0].clientY - touchStartY;
+            const velocidade = distancia / (Date.now() - touchStartTime) * 1000;
+            if (distancia > 0) animarDesenrolo(velocidade);
+        });
+
+        // Inicializa
+        novoRolo();
+    </script>
+</body>
+</html>
