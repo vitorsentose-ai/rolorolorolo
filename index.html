@@ -62,7 +62,7 @@
 
         let roloAtual = null;
         let camadas = [];
-        let lastX = 0, lastY = 0, touchStartTime = 0, animId = null;
+        let lastX = 0, lastY = 0, lastTime = 0, velocityX = 0, velocityY = 0, animId = null;
         let fundoAtual = Math.floor(Math.random() * fundos.length);
         let pontos = 0, combo = 0, challengeInterval = null;
         const scoreEl = document.getElementById('score');
@@ -70,6 +70,13 @@
 
         function atualizarScore() {
             scoreEl.textContent = `Pontos: ${pontos} | Combo: ${combo}`;
+        }
+
+        function clipToBounds(x, y) {
+            return {
+                x: Math.max(0, Math.min(canvas.width, x)),
+                y: Math.max(0, Math.min(canvas.height, y))
+            };
         }
 
         function desenharRolo() {
@@ -81,7 +88,7 @@
                 ctx.translate(roloAtual.x, roloAtual.y);
                 ctx.rotate(roloAtual.angulo);
 
-                // Rolo icônico
+                // Rolo icônico (visível inteiro)
                 ctx.fillStyle = '#654321'; ctx.fillRect(-8, -8, 16, 16);
                 ctx.fillStyle = '#8B4513';
                 ctx.beginPath(); ctx.arc(0, 0, roloAtual.raio, 0, Math.PI * 2); ctx.fill();
@@ -91,7 +98,7 @@
                     ctx.fillStyle = roloAtual.cor[roloAtual.cor.length - 1]; ctx.fillRect(-roloAtual.raio + 2, -2, 4, roloAtual.raio * 2);
                 }
 
-                // Papel desenrolado: faixa dinâmica
+                // Papel desenrolado: path clipado e visível
                 if (roloAtual.path.length > 0) {
                     ctx.globalAlpha = 0.9;
                     ctx.strokeStyle = roloAtual.cor[0];
@@ -100,7 +107,7 @@
                     ctx.moveTo(roloAtual.path[0].x - roloAtual.x, roloAtual.path[0].y - roloAtual.y);
                     roloAtual.path.forEach(p => ctx.lineTo(p.x - roloAtual.x, p.y - roloAtual.y));
                     ctx.stroke();
-                    // Textura serrilhada ao longo da linha
+                    // Textura serrilhada
                     for (let i = 0; i < roloAtual.path.length; i += 4) {
                         ctx.fillStyle = roloAtual.cor[1]; ctx.fillRect(roloAtual.path[i].x - roloAtual.x - 2, roloAtual.path[i].y - roloAtual.y - 1, 4, roloAtual.espessura + 2);
                     }
@@ -111,7 +118,8 @@
         }
 
         function iniciarRolo(x, y) {
-            roloAtual = { x, y, raio: 30, cor: paletas[Math.floor(Math.random() * paletas.length)], angulo: 0, path: [], espessura: 8 };
+            const clipped = clipToBounds(x, y);
+            roloAtual = { x: clipped.x, y: clipped.y, raio: 30, cor: paletas[Math.floor(Math.random() * paletas.length)], angulo: 0, path: [], espessura: 8 };
             desenharRolo();
         }
 
@@ -119,14 +127,37 @@
             if (!roloAtual) return;
             const dist = Math.sqrt(dx * dx + dy * dy);
             roloAtual.angulo = Math.atan2(dy, dx);
-            roloAtual.espessura = Math.max(4, Math.min(12, 8 / velocidade)); // Controle por velocidade
-            roloAtual.path.push({ x: lastX + dx, y: lastY + dy });
-            pontos += Math.floor(dist / 10); // Pontos por distância
+            roloAtual.espessura = Math.max(4, Math.min(12, velocidade * 4)); // Espessura por velocidade
+            const newX = lastX + dx;
+            const newY = lastY + dy;
+            const clipped = clipToBounds(newX, newY);
+            roloAtual.path.push(clipped);
+            pontos += Math.floor(dist / 10);
             combo++;
-            if (combo % 5 === 0) pontos += 50; // Bonus combo
+            if (combo % 5 === 0) pontos += 50;
             atualizarScore();
             desenharRolo();
-            if ('vibrate' in navigator) navigator.vibrate(10); // Vibração sutil
+            if ('vibrate' in navigator) navigator.vibrate(Math.floor(velocidade * 20)); // Vibração por velocidade
+            return clipped;
+        }
+
+        function aplicarMomentum(velX, velY) {
+            if (animId) cancelAnimationFrame(animId);
+            let momentum = Math.sqrt(velX * velX + velY * velY) * 50; // Força baseada na velocidade final
+            function frame() {
+                if (momentum <= 0) {
+                    finalizarRolo();
+                    return;
+                }
+                const dx = velX * momentum / 50;
+                const dy = velY * momentum / 50;
+                const clipped = desenrolar(dx, dy, momentum / 50);
+                lastX = clipped.x;
+                lastY = clipped.y;
+                momentum -= 1; // Decaimento gradual
+                animId = requestAnimationFrame(frame);
+            }
+            frame();
         }
 
         function finalizarRolo() {
@@ -170,13 +201,14 @@
             }
         });
 
-        // Eventos touch mobile com controle real-time
+        // Eventos touch mobile com controle real-time e momentum
         canvas.addEventListener('touchstart', e => {
             e.preventDefault();
             lastX = e.touches[0].clientX - canvas.offsetLeft;
             lastY = e.touches[0].clientY - canvas.offsetTop;
-            touchStartTime = Date.now();
-            if (!roloAtual) iniciarRolo(lastX, lastY);
+            lastTime = Date.now();
+            velocityX = 0; velocityY = 0;
+            iniciarRolo(lastX, lastY);
         });
 
         canvas.addEventListener('touchmove', e => {
@@ -185,15 +217,19 @@
             const currentY = e.touches[0].clientY - canvas.offsetTop;
             const dx = currentX - lastX;
             const dy = currentY - lastY;
-            const tempo = Date.now() - touchStartTime;
-            const velocidade = Math.sqrt(dx * dx + dy * dy) / (tempo || 1);
-            desenrolar(dx, dy, velocidade);
-            lastX = currentX;
-            lastY = currentY;
+            const currentTime = Date.now();
+            const dt = currentTime - lastTime;
+            const velocidade = Math.sqrt(dx * dx + dy * dy) / (dt || 1);
+            const clipped = desenrolar(dx, dy, velocidade);
+            velocityX = dx / dt;
+            velocityY = dy / dt;
+            lastX = clipped.x;
+            lastY = clipped.y;
+            lastTime = currentTime;
         });
 
         canvas.addEventListener('touchend', e => {
-            finalizarRolo();
+            aplicarMomentum(velocityX, velocityY);
         });
 
         // Inicializa
