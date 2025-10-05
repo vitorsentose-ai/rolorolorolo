@@ -3,37 +3,43 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Desenrolo 8-bit</title>
+    <title>Desenrolo Parkour Adventure</title>
     <style>
-        body { margin: 0; background: #000; color: #fff; font-family: 'Courier New', monospace; text-transform: uppercase; image-rendering: pixelated; font-size: 12px; }
-        canvas { display: block; width: 100%; height: 80vh; background: #fff; image-rendering: pixelated; border-radius: 8px; margin: 0 auto; }
-        .controls { text-align: center; padding: 10px; background: #000; }
+        body { margin: 0; background: #f0f0f0; color: #a0a0a0; font-family: 'Courier New', monospace; text-transform: uppercase; image-rendering: pixelated; font-size: 12px; }
+        canvas { display: block; width: 100%; height: 80vh; background: #fafafa; image-rendering: pixelated; border-radius: 8px; margin: 0 auto; }
+        .controls { text-align: center; padding: 10px; background: #e0e0e0; }
         button { 
-            background: #000; color: #fff; border: 3px solid #fff; padding: 8px 16px; margin: 5px; 
+            background: #d0d0d0; color: #808080; border: 2px solid #b0b0b0; padding: 8px 16px; margin: 5px; 
             font-family: inherit; cursor: pointer; image-rendering: pixelated; 
-            box-shadow: 2px 2px 0 #000;
+            box-shadow: 1px 1px 0 #c0c0c0;
         }
-        button:hover { background: #fff; color: #000; box-shadow: 1px 1px 0 #000; transform: translate(1px, 1px); }
-        button:active { box-shadow: none; transform: translate(2px, 2px); }
+        button:hover { background: #fafafa; color: #606060; box-shadow: 0 0 0 #a0a0a0; }
         #crt-toggle:checked ~ canvas { filter: url(#crt-scanlines); }
-        #score { position: absolute; top: 10px; left: 10px; color: #fff; background: #000; padding: 5px; }
+        #score { position: absolute; top: 10px; left: 10px; color: #a0a0a0; background: #e0e0e0; padding: 5px; }
+        #title-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: #f8f8f8; display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 10; touch-action: none; }
+        #title { font-size: 24px; color: #c0c0c0; animation: blink 1s infinite; }
+        @keyframes blink { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0; } }
     </style>
 </head>
 <body>
+    <div id="title-screen">
+        <div id="title">DESENROLO PARKOUR ADVENTURE<br>TOQUE PARA COMEÇAR</div>
+    </div>
     <svg style="display:none;">
         <filter id="crt-scanlines">
             <feTurbulence type="fractalNoise" baseFrequency="0 0.5" numOctaves="1" result="noise"/>
             <feBlend in="SourceGraphic" in2="noise" mode="multiply" result="mult"/>
-            <feColorMatrix values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.1 0"/>
+            <feColorMatrix values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.05 0"/>
         </filter>
     </svg>
-    <div class="controls">
+    <div class="controls" style="display:none;">
         <label><input type="checkbox" id="crt-toggle"> CRT On</label>
-        <label><input type="checkbox" id="challenge-mode"> Modo Desafio</label>
-        <button onclick="limparTudo()">Limpar Tudo</button>
+        <label><input type="checkbox" id="nes-challenge"> Modo NES</label>
+        <button onclick="demoAuto()">Demo Auto</button>
+        <button onclick="limparTudo()">Reset</button>
         <button onclick="salvarObra()">Salvar JPG</button>
     </div>
-    <div id="score">Pontos: 0 | Combo: 0</div>
+    <div id="score" style="display:none;">Pontos: 0 | Nível: 1</div>
     <canvas id="canvas"></canvas>
     <script>
         const canvas = document.getElementById('canvas');
@@ -41,60 +47,72 @@
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight * 0.8;
 
-        // Paletas somente secundárias + branca (8-bit style)
+        // Paletas pastel NES
         const paletas = [
-            ['#FFFFFF', '#F0F0F0', '#E0E0E0', '#D0D0D0'], // Branco
-            ['#00FF00', '#00E000', '#00C000', '#00A000'], // Verde
-            ['#FFA500', '#FF9000', '#FF7000', '#FF5000'], // Laranja
-            ['#800080', '#700070', '#600060', '#500050'], // Roxo
-            ['#FFFF00', '#FFFF00', '#E0E000', '#C0C000']  // Amarelo
+            ['#F5F5F5', '#EDEDED', '#E5E5E5', '#DDDDDD'], // Branco off
+            ['#98FB98', '#90EE90', '#87CEEB', '#87CEEB'], // Menta
+            ['#FFB6C1', '#FFA07A', '#FFC0CB', '#FFDAB9'], // Rosa
+            ['#E6E6FA', '#D8BFD8', '#DDA0DD', '#E0B0FF'], // Lavanda
+            ['#FFFFE0', '#FFFACD', '#FAFAD2', '#F0E68C']  // Amarelo claro
         ];
 
-        // Padrões de fundo PB aleatórios
+        // Fundos PB pastel
         const fundos = [
-            () => { ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height); },
-            () => { ctx.fillStyle = '#FFF'; ctx.fillRect(0, 0, canvas.width, canvas.height); },
-            () => { for (let i = 0; i < canvas.height; i += 8) { ctx.fillStyle = (i % 16 === 0) ? '#000' : '#FFF'; ctx.fillRect(0, i, canvas.width, 4); } },
-            () => { for (let x = 0; x < canvas.width; x += 16) for (let y = 0; y < canvas.height; y += 16) { ctx.fillStyle = (x + y) % 32 === 0 ? '#000' : '#FFF'; ctx.fillRect(x, y, 16, 16); } },
-            () => { for (let i = 0; i < 50; i++) { ctx.fillStyle = Math.random() > 0.5 ? '#000' : '#FFF'; ctx.fillRect(Math.random() * canvas.width, Math.random() * canvas.height, 8, 8); } },
-            () => { for (let i = 0; i < canvas.height; i += 20) { ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(canvas.width, i + 10); ctx.lineTo(0, i + 20); ctx.fillStyle = '#000'; ctx.fill(); } }
+            () => { ctx.fillStyle = '#F8F8F8'; ctx.fillRect(0, 0, canvas.width, canvas.height); },
+            () => { ctx.fillStyle = '#FAFAFA'; ctx.fillRect(0, 0, canvas.width, canvas.height); },
+            () => { for (let i = 0; i < canvas.height; i += 8) { ctx.fillStyle = (i % 16 === 0) ? '#F0F0F0' : '#FAFAFA'; ctx.fillRect(0, i, canvas.width, 4); } },
+            () => { for (let x = 0; x < canvas.width; x += 16) for (let y = 0; y < canvas.height; y += 16) { ctx.fillStyle = (x + y) % 32 === 0 ? '#F0F0F0' : '#FAFAFA'; ctx.fillRect(x, y, 16, 16); } },
+            () => { for (let i = 0; i < 50; i++) { ctx.fillStyle = Math.random() > 0.5 ? '#F0F0F0' : '#FAFAFA'; ctx.fillRect(Math.random() * canvas.width, Math.random() * canvas.height, 8, 8); } },
+            () => { for (let i = 0; i < canvas.height; i += 20) { ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(canvas.width, i + 10); ctx.lineTo(0, i + 20); ctx.fillStyle = '#F0F0F0'; ctx.fill(); } }
         ];
 
         let roloAtual = null;
         let camadas = [];
         let pullStartX = 0, pullStartY = 0, pullEndX = 0, pullEndY = 0, isPulling = false, animId = null;
-        let fundoAtual = Math.floor(Math.random() * fundos.length);
-        let pontos = 0, combo = 0, bounces = 0, challengeInterval = null, windX = 0, windY = 0;
+        let fundoAtual = 0;
+        let pontos = 0, combo = 0, bounces = 0, level = 1, nesMode = false, powerUpActive = null;
+        let challengeInterval = null, windX = 0, windY = 0, gravity = 0;
+        let demoRunning = false, demoTimer = null;
         const scoreEl = document.getElementById('score');
-        const challengeMode = document.getElementById('challenge-mode');
+        const controlsEl = document.querySelector('.controls');
+        const titleEl = document.getElementById('title-screen');
+        const nesChallenge = document.getElementById('nes-challenge');
         const friction = 0.98, bounceFactor = 0.8;
 
         function atualizarScore() {
-            scoreEl.textContent = `Pontos: ${pontos} | Combo: ${combo}`;
+            scoreEl.textContent = `Pontos: ${pontos} | Nível: ${level}`;
+            if (pontos > 1000 * level) level++;
+        }
+
+        function spawnPowerUp() {
+            if (Math.random() < 0.2) powerUpActive = Math.random() < 0.5 ? 'big' : 'ghost';
         }
 
         function desenharRolo() {
-            fundos[fundoAtual](); // Fundo PB aleatório
+            fundos[fundoAtual](); // Fundo pastel PB
             camadas.forEach(camada => ctx.drawImage(camada, 0, 0));
 
             if (roloAtual) {
+                const alpha = powerUpActive === 'ghost' ? 0.5 : 1;
+                const raio = powerUpActive === 'big' ? roloAtual.raio * 1.5 : roloAtual.raio;
                 ctx.save();
+                ctx.globalAlpha = alpha;
                 ctx.translate(roloAtual.x, roloAtual.y);
                 ctx.rotate(roloAtual.angulo);
 
-                // Rolo icônico
-                ctx.fillStyle = '#654321'; ctx.fillRect(-8, -8, 16, 16);
-                ctx.fillStyle = '#8B4513';
-                ctx.beginPath(); ctx.arc(0, 0, roloAtual.raio, 0, Math.PI * 2); ctx.fill();
+                // Rolo pastel icônico
+                ctx.fillStyle = '#D2B48C'; ctx.fillRect(-8, -8, 16, 16);
+                ctx.fillStyle = '#DEB887';
+                ctx.beginPath(); ctx.arc(0, 0, raio, 0, Math.PI * 2); ctx.fill();
                 for (let i = 0; i < 3; i++) {
                     ctx.fillStyle = roloAtual.cor[i % roloAtual.cor.length];
-                    ctx.beginPath(); ctx.arc(0, 0, roloAtual.raio - i * 8, 0, Math.PI * 2); ctx.fill();
-                    ctx.fillStyle = roloAtual.cor[roloAtual.cor.length - 1]; ctx.fillRect(-roloAtual.raio + 2, -2, 4, roloAtual.raio * 2);
+                    ctx.beginPath(); ctx.arc(0, 0, raio - i * 8, 0, Math.PI * 2); ctx.fill();
+                    ctx.fillStyle = roloAtual.cor[roloAtual.cor.length - 1]; ctx.fillRect(-raio + 2, -2, 4, raio * 2);
                 }
 
-                // Papel desenrolado
+                // Path desenrolado (foreground composição)
                 if (roloAtual.path.length > 0) {
-                    ctx.globalAlpha = 0.9;
+                    ctx.globalAlpha = alpha * 0.9;
                     ctx.strokeStyle = roloAtual.cor[0];
                     ctx.lineWidth = roloAtual.espessura;
                     ctx.beginPath();
@@ -104,40 +122,55 @@
                     for (let i = 0; i < roloAtual.path.length; i += 4) {
                         ctx.fillStyle = roloAtual.cor[1]; ctx.fillRect(roloAtual.path[i].x - roloAtual.x - 2, roloAtual.path[i].y - roloAtual.y - 1, 4, roloAtual.espessura + 2);
                     }
-                    ctx.globalAlpha = 1;
+                    ctx.globalAlpha = alpha;
                 }
                 ctx.restore();
             }
 
             if (isPulling) {
-                // Linha de mira pixelada
-                ctx.strokeStyle = '#FFF'; ctx.lineWidth = 4;
+                ctx.setLineDash([5, 5]); ctx.strokeStyle = '#D3D3D3'; ctx.lineWidth = 3;
                 ctx.beginPath(); ctx.moveTo(pullStartX, pullStartY); ctx.lineTo(pullEndX, pullEndY); ctx.stroke();
-                ctx.strokeStyle = '#000'; ctx.lineWidth = 2;
-                ctx.beginPath(); ctx.moveTo(pullStartX, pullStartY); ctx.lineTo(pullEndX, pullEndY); ctx.stroke();
+                ctx.setLineDash([]);
             }
         }
 
         function iniciarRolo(x, y) {
-            roloAtual = { x, y, velX: 0, velY: 0, raio: 30, cor: paletas[Math.floor(Math.random() * paletas.length)], angulo: 0, path: [], espessura: 8 };
+            roloAtual = { x, y, velX: 0, velY: 0, raio: 30, cor: paletas[Math.floor(Math.random() * paletas.length)], angulo: 0, path: [], espessura: 6 };
+            spawnPowerUp();
             desenharRolo();
+            playBeep(440, 0.1);
+        }
+
+        function playBeep(freq, duration) {
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            oscillator.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            oscillator.frequency.value = freq;
+            oscillator.type = 'square';
+            gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+            oscillator.start(audioCtx.currentTime);
+            oscillator.stop(audioCtx.currentTime + duration);
         }
 
         function arremessar() {
             if (!roloAtual) return;
-            const dx = pullStartX - pullEndX; // Direção oposta ao puxar
+            const dx = pullStartX - pullEndX;
             const dy = pullStartY - pullEndY;
-            const força = Math.sqrt(dx * dx + dy * dy) / 10; // Força do arremesso
+            const força = Math.sqrt(dx * dx + dy * dy) / 10;
             roloAtual.velX = dx / 10 * força / 50;
             roloAtual.velY = dy / 10 * força / 50;
-            roloAtual.espessura = Math.max(4, Math.min(12, força / 5)); // Espessura por força
+            roloAtual.espessura = Math.max(4, Math.min(10, força / 5));
             isPulling = false;
             animarArremesso();
-            if ('vibrate' in navigator) navigator.vibrate(Math.floor(força * 5));
+            playBeep(523, 0.05);
             combo++;
-            pontos += Math.floor(força * 10); // Pontos por força
-            if (combo % 3 === 0) pontos += 100; // Bonus combo
+            pontos += Math.floor(força * 10);
+            if (combo % 3 === 0) pontos += 100;
             atualizarScore();
+            if ('vibrate' in navigator) navigator.vibrate(Math.floor(força * 3));
         }
 
         function animarArremesso() {
@@ -145,19 +178,16 @@
             function frame() {
                 if (!roloAtual) return;
                 roloAtual.velX *= friction;
-                roloAtual.velY *= friction;
-                roloAtual.velX += windX; // Vento no desafio
+                roloAtual.velY *= friction + gravity * 0.01;
+                roloAtual.velX += windX;
                 roloAtual.velY += windY;
                 roloAtual.x += roloAtual.velX;
                 roloAtual.y += roloAtual.velY;
-                roloAtual.angulo += roloAtual.velX / 100; // Rotação durante voo
+                roloAtual.angulo += roloAtual.velX / 100;
 
-                // Bounce nas bordas
-                if (roloAtual.x < 0 || roloAtual.x > canvas.width) { roloAtual.velX *= -bounceFactor; roloAtual.x = Math.max(0, Math.min(canvas.width, roloAtual.x)); bounces++; pontos += 20; }
-                if (roloAtual.y < 0 || roloAtual.y > canvas.height) { roloAtual.velY *= -bounceFactor; roloAtual.y = Math.max(0, Math.min(canvas.height, roloAtual.y)); bounces++; pontos += 20; }
-                atualizarScore();
+                if (roloAtual.x < 0 || roloAtual.x > canvas.width) { roloAtual.velX *= -bounceFactor; roloAtual.x = Math.max(0, Math.min(canvas.width, roloAtual.x)); bounces++; pontos += 20; playBeep(659, 0.03); }
+                if (roloAtual.y < 0 || roloAtual.y > canvas.height) { roloAtual.velY *= -bounceFactor; roloAtual.y = Math.max(0, Math.min(canvas.height, roloAtual.y)); bounces++; pontos += 20; playBeep(659, 0.03); }
 
-                // Desenrola durante voo
                 if (Math.abs(roloAtual.velX) > 0.1 || Math.abs(roloAtual.velY) > 0.1) {
                     roloAtual.path.push({ x: roloAtual.x, y: roloAtual.y });
                 } else {
@@ -178,45 +208,93 @@
                 camada.getContext('2d').drawImage(canvas, 0, 0);
                 camadas.push(camada);
                 roloAtual = null;
+                powerUpActive = null;
                 bounces = 0;
             }
         }
 
         function alternarFundo() {
             fundoAtual = Math.floor(Math.random() * fundos.length);
-            windX = (Math.random() - 0.5) * 0.05; // Vento aleatório
-            windY = (Math.random() - 0.5) * 0.05;
+            windX = (Math.random() - 0.5) * (nesMode ? 0.1 : 0.05);
+            windY = (Math.random() - 0.5) * (nesMode ? 0.1 : 0.05);
+            gravity = nesMode ? 0.5 : 0.2;
             desenharRolo();
         }
 
         function limparTudo() {
             camadas = [];
             roloAtual = null;
-            pontos = 0; combo = 0; bounces = 0;
+            pontos = 0; combo = 0; bounces = 0; level = 1;
             atualizarScore();
             desenharRolo();
         }
 
         function salvarObra() {
             const link = document.createElement('a');
-            link.download = 'obra-desenrolo-arte.jpg';
+            link.download = 'obra-desenrolo-pastel.jpg';
             link.href = canvas.toDataURL('image/jpeg', 0.9);
             link.click();
         }
 
-        // Modo Desafio: Altera fundo e vento
-        challengeMode.addEventListener('change', () => {
-            if (challengeMode.checked) {
-                challengeInterval = setInterval(alternarFundo, 8000);
+        // Modo NES
+        nesChallenge.addEventListener('change', () => {
+            nesMode = nesChallenge.checked;
+            if (nesMode) {
+                challengeInterval = setInterval(alternarFundo, nesMode ? 6000 : 8000);
+                gravity = 0.3;
             } else {
                 clearInterval(challengeInterval);
-                windX = 0; windY = 0;
+                windX = 0; windY = 0; gravity = 0;
             }
         });
 
-        // Eventos touch para arremesso preciso
+        // Demo Auto: Simula arremessos
+        function demoAuto() {
+            if (demoRunning) return;
+            demoRunning = true;
+            limparTudo();
+            let demoCount = 0, maxDemos = Math.floor(Math.random() * 3) + 3;
+            function nextDemo() {
+                if (demoCount >= maxDemos || !demoRunning) {
+                    demoRunning = false;
+                    return;
+                }
+                alternarFundo(); // Muda padrão PB aleatório
+                const randX = Math.random() * canvas.width;
+                const randY = Math.random() * canvas.height;
+                const randDirX = (Math.random() - 0.5) * 100;
+                const randDirY = (Math.random() - 0.5) * 100;
+                const força = Math.random() * 50 + 20;
+                iniciarRolo(randX, randY);
+                pullStartX = randX; pullStartY = randY;
+                pullEndX = randX + randDirX; pullEndY = randY + randDirY;
+                arremessar();
+                demoCount++;
+                demoTimer = setTimeout(nextDemo, 2000 + Math.random() * 1000);
+            }
+            nextDemo();
+        }
+
+        // Fix: Listener direto no título pra toque/click
+        titleEl.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            titleEl.style.display = 'none';
+            controlsEl.style.display = 'block';
+            scoreEl.style.display = 'block';
+            setTimeout(() => demoAuto(), 3000); // Demo auto após 3s
+        });
+
+        titleEl.addEventListener('click', () => {
+            titleEl.style.display = 'none';
+            controlsEl.style.display = 'block';
+            scoreEl.style.display = 'block';
+            setTimeout(() => demoAuto(), 3000);
+        });
+
+        // Eventos touch no canvas (após título)
         canvas.addEventListener('touchstart', e => {
             e.preventDefault();
+            if (titleEl.style.display !== 'none') return; // Ignora se título visível
             pullStartX = e.touches[0].clientX - canvas.offsetLeft;
             pullStartY = e.touches[0].clientY - canvas.offsetTop;
             isPulling = true;
@@ -235,12 +313,10 @@
         });
 
         canvas.addEventListener('touchend', e => {
-            if (isPulling) {
-                arremessar();
-            }
+            if (isPulling) arremessar();
         });
 
-        // Inicializa
+        // Inicializa título
         desenharRolo();
     </script>
 </body>
